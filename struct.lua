@@ -38,8 +38,45 @@ local pack_conversion = {
 	bool="b",
 }
 
+local function type_to_fmt(type_name)
+	-- local name = type_name:match("[struct] ([%a%d_]+)")
+	-- if name then
+	-- 	return c99.typedefs[name]
+	-- end
+	
+	local t = pack_conversion[type_name]
+	if not t then
+		t = c99.typedefs[type_name]
+		if type(t) == "table" then
+			if t.fmt then
+				t = t.fmt
+			elseif t[1] then
+				return type_to_fmt(t[1])
+			end
+		end
+	end
+	if not t then
+		t = string.gsub(type_name, " ", "_")
+		t = pack_conversion[t]
+	end
+	return t
+end
 
-local function struct_declarations(code)
+local function declarator_fmt(dec)
+	local fmt
+	if dec.is_pointer then
+		fmt = "i"
+	else
+		fmt = type_to_fmt(dec.type)
+	end
+
+	if fmt and dec.array then
+		fmt = string.rep(fmt, dec.array)
+	end
+	return fmt
+end
+
+local function struct_declarations(code, structs)
 	-- print("code:", code)
 	local rules = ceg.combine({
 			[1] = V"followed",
@@ -84,8 +121,7 @@ local function struct_declarations(code)
 			anony = table.remove(anony_stack)
 			parent = anony_stack[#anony_stack] or members
 
-			local data = {type="anony", name=last_identifier, is_union=is_union}
-			data[last_identifier] = anony
+			local data = {type="anony", name=last_identifier, is_union=is_union, body=anony}
 			table.insert(parent, data)
 
 			return v
@@ -110,6 +146,15 @@ local function struct_declarations(code)
 			current = anony_stack[#anony_stack] or members
 			assert(not current[name], name..":"..last_type)
 			local data = {name=name, type=last_type, is_pointer=is_pointer, array=array}
+
+			local struct_name = last_type:match("[struct] ([%a%d_]+)")
+			if not is_pointer and struct_name then
+				data.body = assert(structs[struct_name], struct_name)
+				data.type = struct_name
+			end
+
+			data.fmt = declarator_fmt(data)
+
 			table.insert(current, data)
 			-- print("-->", #anony_stack, last_type, ":", name)
 			last_type = nil
@@ -127,53 +172,30 @@ local function struct_declarations(code)
 	return members
 end
 
-local function type_to_fmt(type_name)
-	local name = type_name:match("[struct] ([%a%d_]+)")
-	if name then
-		return c99.typedefs[name]
-	end
-	
-	local t = pack_conversion[type_name]
-	if not t then
-		t = c99.typedefs[type_name]
-		if type(t) == "table" then
-			if t.fmt then
-				t = t.fmt
-			elseif t[1] then
-				return type_to_fmt(t[1])
-			end
-		end
-	end
-	if not t then
-		t = string.gsub(type_name, " ", "_")
-		t = pack_conversion[t]
-	end
-	return t
-end
-
 local function struct_pack(struct)
 	local fmt = ""
 	for k, v in ipairs(struct) do
 		local t
 		if v.type == "anony" then
 			if v.is_union then
-				local fmts = {}
-				for m, n in ipairs(v[v.name]) do
+				local fmt
+				local max_size
+				for m, n in ipairs(v.body) do
 					local tmp = struct_pack({n})
-					if not fmts[#fmts] or tmp ~= fmts[#fmts] then
-						table.insert(fmts, tmp)
+					local packsize = string.packsize(tmp)
+					if not max_size or packsize > max_size then
+						max_size = packsize
+						fmt=tmp
 					end
 				end
-				if #fmts > 1 then
-					t = string.format("{%s}", table.concat(fmts, "|"))
-				else
-					t = fmts[1]
-				end
+				t = fmt
 			else
-				t = struct_pack(v[v.name])
+				t = struct_pack(v.body)
 			end
 		elseif v.is_pointer then
 			t = "i"
+		elseif v.body then
+			t = struct_pack(v.body)
 		else
 			t = type_to_fmt(v.type)
 		end
@@ -182,8 +204,9 @@ local function struct_pack(struct)
 		if t and v.array then
 			t = string.rep(t, v.array)
 		end
-		fmt = fmt..(t or "")
+		fmt = fmt..(t or "?")
 	end
+	assert(fmt~="")
 	return fmt
 end
 
@@ -207,7 +230,7 @@ local function struct_block(code)
 
 		followed = function(block)
 			local name = block:match("[struct] ([%a%d_]+)")
-			declarations = struct_declarations(block)
+			declarations = struct_declarations(block, structs)
 			assert(not structs[name], name)
 			structs[name] = declarations
 			c99.typedefs[name] = struct_pack(declarations)
@@ -291,6 +314,67 @@ local function parse(code)
 	return struct_block(code)
 end
 
+local unpack_scheme_alias
+local function unpack_union(scheme, bin)
+	local tbl = {}
+
+	local max_unread
+	for k, v in ipairs(scheme) do
+		local ret, idx = unpack_scheme_alias({v}, bin)
+		table.insert(tbl, ret)
+		max_unread = (not max_unread or idx > max_unread) and idx or max_unread
+	end
+
+	return tbl, max_unread
+end
+
+local function unpack_scheme(scheme, bin)
+	local tbl = {}
+	local idx = 1
+	for k, v in ipairs(scheme) do
+		if v.body then
+			if v.is_union then
+				local data, delta = unpack_union(v.body, string.sub(bin, idx))
+				tbl[v.name] = data
+				idx = idx + delta - 1
+			else
+				local data, delta = unpack_scheme(v.body, string.sub(bin, idx))
+				tbl[v.name] = data
+				idx = idx + delta - 1
+			end
+		else
+			local data = table.pack(string.unpack(v.fmt, bin, idx))
+			idx = data[#data]
+			data[#data] = nil
+			if #data == 1 then
+				data=data[1]
+			end
+			tbl[v.name] = data
+		end
+	end
+	return tbl, idx
+end
+unpack_scheme_alias = unpack_scheme
+
+local function unpack(structs, struct_name, bin)
+	local scheme = structs[struct_name]
+
+	return unpack_scheme(scheme, bin)
+end
+
+local function pack(structs, struct_name, tbl)
+	local layout = c99.typedefs[struct_name]
+	assert(layout and type(layout) == "string", struct_name)
+	local struct = structs[struct_name]
+	local data = {}
+	for k, v in ipairs(struct) do
+		table.insert(data, tbl[v.name])
+	end
+	return string.pack(layout, table.unpack(data))
+end
+
 return {
 	parse=parse,
+	unpack=unpack,
+	pack=pack,
 }
