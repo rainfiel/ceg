@@ -1,6 +1,5 @@
 local assert, pairs, tostring, type = assert, pairs, tostring, type
 local ipairs = ipairs
-local unpack = unpack
 local setmetatable = setmetatable
 local print = print
 ----------------------------------------------------------
@@ -315,51 +314,94 @@ local function parse(code)
 end
 
 local unpack_scheme_alias
-local function unpack_union(scheme, bin)
-	local tbl = {}
-
-	local max_unread
+local function unpack_union(scheme, unions, union_cnt, union_idx)
+	local tbls = {}
+	local fmts = {}
+	local max_size
+	local max_union
 	for k, v in ipairs(scheme) do
-		local ret, idx = unpack_scheme_alias({v}, bin)
-		table.insert(tbl, ret)
-		max_unread = (not max_unread or idx > max_unread) and idx or max_unread
+		local s_fmt, s_tbl = unpack_scheme_alias({v}, unions, union_cnt)
+		local sz = string.packsize("!"..s_fmt)
+		if not max_size or sz > max_size then
+			max_size = sz
+			max_union = k
+		end
+		table.insert(tbls, s_tbl)
+		table.insert(fmts, s_fmt)
 	end
 
-	return tbl, max_unread
+	if union_idx == max_union then
+		return fmts[max_union], tbls[max_union]
+	else
+		local fmt = assert(fmts[union_idx], union_idx..":"..#fmts)
+		local tbl = tbls[union_idx]
+
+		local sz = max_size - string.packsize("!"..fmt)
+		tbl.__aligned = sz
+		fmt = fmt..string.rep("b", sz)
+		return fmt, tbl
+	end
 end
 
-local function unpack_scheme(scheme, bin)
+local function unpack_scheme(scheme, unions, union_cnt)
 	local tbl = {}
-	local idx = 1
+	local fmt = ""
+	unions = unions or {}
+	union_cnt = union_cnt or 0
 	for k, v in ipairs(scheme) do
 		if v.body then
 			if v.is_union then
-				local data, delta = unpack_union(v.body, string.sub(bin, idx))
-				tbl[v.name] = data
-				idx = idx + delta - 1
+				union_cnt = union_cnt + 1
+				local union_idx = unions[union_cnt] or 1
+				local u_fmt, u_tbl = unpack_union(v.body, unions, union_cnt, union_idx)
+				fmt = fmt..u_fmt
+				u_tbl.name = v.name
+				table.insert(tbl, u_tbl)
 			else
-				local data, delta = unpack_scheme(v.body, string.sub(bin, idx))
-				tbl[v.name] = data
-				idx = idx + delta - 1
+				local s_fmt, s_tbl = unpack_scheme(v.body, unions, union_cnt)
+				fmt = fmt..s_fmt
+				s_tbl.name = v.name
+				table.insert(tbl, s_tbl)
 			end
 		else
-			local data = table.pack(string.unpack(v.fmt, bin, idx))
-			idx = data[#data]
-			data[#data] = nil
-			if #data == 1 then
-				data=data[1]
-			end
-			tbl[v.name] = data
+			fmt = fmt..v.fmt
+			table.insert(tbl, v.name)
 		end
 	end
-	return tbl, idx
+	return fmt, tbl
 end
 unpack_scheme_alias = unpack_scheme
 
-local function unpack(structs, struct_name, bin)
+local function layout(data, keys, unread)
+	local tbl = {}
+	local idx = unread or 1
+	for k, v in ipairs(keys) do
+		if type(v) == "string" then
+			-- tbl[v] = data[idx]
+			local t = {}
+			t[v] = data[idx]
+			table.insert(tbl, t)
+			idx = idx + 1
+		else
+			local s_tbl, s_idx = layout(data, v, idx)
+			-- tbl[v.name] = s_tbl
+			local t = {}
+			t[v.name] = s_tbl
+			table.insert(tbl, t)
+			idx = s_idx
+		end
+	end
+	idx = idx + (keys.__aligned or 0)
+	return tbl, idx
+end
+
+local function unpack(structs, struct_name, bin, unions)
 	local scheme = structs[struct_name]
 
-	return unpack_scheme(scheme, bin)
+	local fmt, tbl = unpack_scheme(scheme, unions)
+	local data = table.pack(string.unpack("!"..fmt, bin))
+	data[#data] = nil
+	return layout(data, tbl)
 end
 
 local function pack(structs, struct_name, tbl)
