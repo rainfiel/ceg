@@ -10,17 +10,20 @@ local io = require 'io'
 ----------------------------------------------------------
 local c99 = require("ceg.c99")
 local ceg = require("ceg")
-local m = require("ejoy2dx.lpeg.c")
+local m = require("lpeg")
 ----------------------------------------------------------
 local format = string.format
 local P, V, R, S, C = m.P, m.V, m.R, m.S, m.C
 ----------------------------------------------------------
 
+local inst = {pointer_fmt = "L"} --L for 64bit and I for 32bit
+
+local MAXINTSIZE = 16 --maximum size for the binary representation of an integer(see lstrlib.c)
 local SS = c99.SS
 c99.typedefs.bool = "b"
 
 local pack_conversion = {
-	char="B",
+	char="b",
 	unsigned_char="B",
 	signed_char="b",
 	int="i",
@@ -64,14 +67,14 @@ end
 local function declarator_fmt(dec)
 	local fmt
 	if dec.is_pointer then
-		fmt = "i"
+		fmt = inst.pointer_fmt
 	else
 		fmt = type_to_fmt(dec.type)
 	end
 
-	if fmt and dec.array then
-		fmt = string.rep(fmt, dec.array)
-	end
+	-- if fmt and dec.array then
+	-- 	fmt = string.rep(fmt, dec.array)
+	-- end
 	return fmt
 end
 
@@ -200,9 +203,9 @@ local function struct_pack(struct)
 		end
 		t = t or "?"
 
-		if t and v.array then
-			t = string.rep(t, v.array)
-		end
+		-- if t and v.array then
+		-- 	t = string.rep(t, v.array)
+		-- end
 		fmt = fmt..(t or "?")
 	end
 	assert(fmt~="")
@@ -308,20 +311,20 @@ local function typedefs(code, rematch)
 	return res
 end
 
-local function parse(code)
+function inst.parse(code)
 	typedefs(code)
 	return struct_block(code)
 end
 
 local unpack_scheme_alias
-local function unpack_union(scheme, unions, union_cnt, union_idx)
+local function unpack_union(scheme, unions, union_idx)
 	local tbls = {}
 	local fmts = {}
 	local max_size
 	local max_union
 	for k, v in ipairs(scheme) do
-		local s_fmt, s_tbl = unpack_scheme_alias({v}, unions, union_cnt)
-		local sz = string.packsize("!"..s_fmt)
+		local s_fmt, s_tbl = unpack_scheme_alias({v}, unions)
+		local sz = string.packsize("!="..s_fmt)
 		if not max_size or sz > max_size then
 			max_size = sz
 			max_union = k
@@ -336,37 +339,124 @@ local function unpack_union(scheme, unions, union_cnt, union_idx)
 		local fmt = assert(fmts[union_idx], union_idx..":"..#fmts)
 		local tbl = tbls[union_idx]
 
-		local sz = max_size - string.packsize("!"..fmt)
-		tbl.__aligned = sz
-		fmt = fmt..string.rep("b", sz)
+		local sz = max_size - string.packsize("!="..fmt)
+		fmt = fmt..string.rep("x", sz)
+		-- if max_size <= MAXINTSIZE then
+		-- 	return fmt..max_size, tbl
+		-- else
+
+		-- end
 		return fmt, tbl
 	end
 end
 
-local function unpack_scheme(scheme, unions, union_cnt)
+local function _layout(fmt, tbl, keys, bin)
+	local data = string.unpack(fmt, bin)
+	local unread = data[#data]
+	data[#data] = nil
+	assert(#data == #keys)
+	for k, v in ipairs(data) do
+		tbl[keys[k]] = v
+	end
+	return unread
+end
+
+local function unpack_schemex(scheme, bin)
+	local tbl = {}
+	local keys = {}
+	local align, align_size, tail_x = nil
+	local fmt = ""
+
+	local layout = function()
+		if tail_x then
+			fmt = fmt .. "X" .. align
+		end
+		local data = string.unpack(fmt, bin)
+		local unraed = data[#data]
+		data[#data] = nil
+		for i, j in ipairs(data) do
+			tbl[keys[i]] = j
+		end
+
+		align, align_size, tail_x=nil
+		keys = {}
+		fmt = ""
+	end
+
+	for k, v in ipairs(scheme) do
+		if v.body	 then
+			-- unpack
+			if fmt ~= "" then
+				layout()
+			end
+
+			if v.is_union then
+			else
+			end
+		else
+			local sz = string.packsize(v.fmt)
+			if not align_size or sz > align_size then
+				align_size = sz
+				align = v.fmt
+			else
+				tail_x = true
+			end
+			if v.array then
+				fmt = fmt .. string.rep(v.fmt, v.array)
+			else
+				fmt = fmt .. v.fmt
+			end
+			table.insert(keys, v.name)
+		end
+	end
+
+	if fmt ~= "" then
+		layout()
+	end
+	return tbl
+end
+
+local function unpack_scheme(scheme, unions)
 	local tbl = {}
 	local fmt = ""
 	unions = unions or {}
-	union_cnt = union_cnt or 0
+	unions.union_cnt = unions.union_cnt or 0
+
+	local align, align_size = nil
 	for k, v in ipairs(scheme) do
 		if v.body then
 			if v.is_union then
-				union_cnt = union_cnt + 1
-				local union_idx = unions[union_cnt] or 1
-				local u_fmt, u_tbl = unpack_union(v.body, unions, union_cnt, union_idx)
+				unions.union_cnt = unions.union_cnt + 1
+				local union_idx = unions[unions.union_cnt] or 1
+				local u_fmt, u_tbl = unpack_union(v.body, unions, union_idx)
 				fmt = fmt..u_fmt
 				u_tbl.name = v.name
 				table.insert(tbl, u_tbl)
 			else
-				local s_fmt, s_tbl = unpack_scheme(v.body, unions, union_cnt)
+				local s_fmt, s_tbl = unpack_scheme(v.body, unions)
 				fmt = fmt..s_fmt
 				s_tbl.name = v.name
 				table.insert(tbl, s_tbl)
 			end
 		else
-			fmt = fmt..v.fmt
-			table.insert(tbl, v.name)
+			if v.array and v.array > 1 then
+				fmt = fmt .. string.rep(v.fmt, v.array)
+				table.insert(tbl, {name=v.name, array=v.array})
+			else
+				fmt = fmt..v.fmt
+				table.insert(tbl, v.name)
+			end
+
+			local sz = string.packsize(v.fmt)
+			if not align_size or sz > align_size then
+				align_size = sz
+				align = v.fmt
+			end
 		end
+	end
+
+	if align then
+		fmt = string.format("X%s%sX%s", align, fmt, align)
 	end
 	return fmt, tbl
 end
@@ -377,34 +467,48 @@ local function layout(data, keys, unread)
 	local idx = unread or 1
 	for k, v in ipairs(keys) do
 		if type(v) == "string" then
-			-- tbl[v] = data[idx]
-			local t = {}
-			t[v] = data[idx]
-			table.insert(tbl, t)
+			tbl[v] = data[idx]
+			-- local t = {}
+			-- t[v] = data[idx]
+			-- table.insert(tbl, t)
 			idx = idx + 1
+		elseif v.array then
+			-- local t = {}
+			-- t[v.name] = {}
+			-- for i=1, v.array do
+			-- 	table.insert(t[v.name], data[idx])
+			-- 	idx = idx + 1
+			-- end
+			-- table.insert(tbl, t)
+			tbl[v.name] = {}
+			for i=1, v.array do
+				table.insert(tbl[v.name], data[idx])
+				idx = idx + 1
+			end
 		else
 			local s_tbl, s_idx = layout(data, v, idx)
-			-- tbl[v.name] = s_tbl
-			local t = {}
-			t[v.name] = s_tbl
-			table.insert(tbl, t)
+			tbl[v.name] = s_tbl
+			-- local t = {}
+			-- t[v.name] = s_tbl
+			-- table.insert(tbl, t)
+
 			idx = s_idx
 		end
 	end
-	idx = idx + (keys.__aligned or 0)
 	return tbl, idx
 end
 
-local function unpack(structs, struct_name, bin, unions)
+function inst.unpack(structs, struct_name, bin, unions)
 	local scheme = structs[struct_name]
 
 	local fmt, tbl = unpack_scheme(scheme, unions)
-	local data = table.pack(string.unpack("!"..fmt, bin))
+	local data = table.pack(string.unpack("!="..fmt, bin))
 	data[#data] = nil
+	-- print(fmt, table.concat(data, ";"))
 	return layout(data, tbl)
 end
 
-local function pack(structs, struct_name, tbl)
+function inst.pack(structs, struct_name, tbl)
 	local layout = c99.typedefs[struct_name]
 	assert(layout and type(layout) == "string", struct_name)
 	local struct = structs[struct_name]
@@ -415,8 +519,4 @@ local function pack(structs, struct_name, tbl)
 	return string.pack(layout, table.unpack(data))
 end
 
-return {
-	parse=parse,
-	unpack=unpack,
-	pack=pack,
-}
+return inst

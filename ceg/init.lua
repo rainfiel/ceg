@@ -4,7 +4,7 @@ local _MY_ENV = {}
 local _ENV = setmetatable(_MY_ENV, {__index=_SYS_ENV})
 
 
-local m = require("ejoy2dx.lpeg.c")
+local m = require("lpeg")
 local table = require("table")
 
 local print = print
