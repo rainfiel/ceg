@@ -57,8 +57,8 @@ f:close()
 
 ----------------------------------------------------------------------------------------------
 local bin = ltest.particle_config()
-local bin_mode_A = struct.unpack(scheme, "particle_config", bin, {1})
--- print(print_tbl(bin_mode_A))
+local particle = struct.unpack(scheme, "particle_config", bin, {1})
+-- print(print_tbl(particle))
 
 local rlt = {startSpin=0.0,startSizeVar=19.0,startSize=18.0,emitterMode=0,endSpin=234.0,startColor={b=0.0,a=0.0,r=0.0,g=0.0}
 ,angle=16.0,startSpinVar=0.0,emitterMatrix=0,srcBlend=1,mode={A={tangentialAccelVar=6.0,radialAccelVar=8.0,speedVar=4.0,radialAccel=7.0,gravity={x=1.0,y=2.0}
@@ -71,31 +71,45 @@ local rlt = {startSpin=0.0,startSizeVar=19.0,startSize=18.0,emitterMode=0,endSpi
 ,dstBlend=769,endSizeVar=21.0,life=14.0,endSize=20.0,angleVar=17.0,positionType=1,sourcePosition={x=10.0,y=11.0}
 ,duration=9.0}
 
-assert(table_equals(bin_mode_A, rlt), "particle_config failed")
+assert(table_equals(particle.dump(), rlt), "particle_config failed")
+
 ----------------------------------------------------------------------------------------------
 
 bin = ltest.union_align()
-local union = struct.unpack(scheme, "union_align", bin, {1,1, 1, 2})
+local union = struct.unpack(scheme, "union_align", bin, {[4] = 2, [7] = 2})
 -- print(print_tbl(union))
+
+union.set("k.i", 4, 2)
 
 rlt = {d=3,c={a=2}
 ,l={f={d=8,e=33}
 }
 ,h=4,g={e=33}
-,k={i={5,6,7}
+,k={i={5,--[[6]]4,7}
 }
+,m={e={d={b=9}}}
+,n={a=33}
+,o=10
 ,head=33}
-assert(table_equals(union, rlt), "union_align failed")
+assert(table_equals(union.dump(), rlt), "union_align failed")
 ----------------------------------------------------------------------------------------------
 
 
 bin = ltest.struct_align()
-local struct = struct.unpack(scheme, "struct_align", bin)
--- print(print_tbl(struct))
+local sa = struct.unpack(scheme, "struct_align", bin)
+-- print(print_tbl(struct.dump()))
 
-rlt = {h=63,g={b=33,a=1}
+sa.set("g.a", 3)
+
+bin = sa.pack()
+sa = struct.unpack(scheme, "struct_align", bin)
+
+rlt = {h=63,g={b=33,a=--[[1]]3}
 ,f=63,e={b=33,a=0}
 ,d=4294967295,c={b=33,a=0}
 ,i={b=33,a=0}
 }
-assert(table_equals(struct, rlt), "struct_align failed")
+
+assert(table_equals(sa.dump(), rlt), "struct_align failed")
+
+print("test succeed")

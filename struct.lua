@@ -18,7 +18,7 @@ local P, V, R, S, C = m.P, m.V, m.R, m.S, m.C
 
 local inst = {pointer_fmt = "L"} --L for 64bit and I for 32bit
 
-local MAXINTSIZE = 16 --maximum size for the binary representation of an integer(see lstrlib.c)
+-- local MAXINTSIZE = 16 --maximum size for the binary representation of an integer(see lstrlib.c)
 local SS = c99.SS
 c99.typedefs.bool = "b"
 
@@ -317,11 +317,14 @@ function inst.parse(code)
 end
 
 local unpack_scheme_alias
-local function unpack_union(scheme, unions, union_idx)
+local function unpack_union(scheme, unions)
 	local tbls = {}
 	local fmts = {}
 	local max_size
 	local max_union
+
+	unions.union_cnt = unions.union_cnt + 1
+	local union_idx = unions[unions.union_cnt] or 1
 	for k, v in ipairs(scheme) do
 		local s_fmt, s_tbl = unpack_scheme_alias({v}, unions)
 		local sz = string.packsize("!="..s_fmt)
@@ -341,11 +344,7 @@ local function unpack_union(scheme, unions, union_idx)
 
 		local sz = max_size - string.packsize("!="..fmt)
 		fmt = fmt..string.rep("x", sz)
-		-- if max_size <= MAXINTSIZE then
-		-- 	return fmt..max_size, tbl
-		-- else
 
-		-- end
 		return fmt, tbl
 	end
 end
@@ -426,9 +425,7 @@ local function unpack_scheme(scheme, unions)
 	for k, v in ipairs(scheme) do
 		if v.body then
 			if v.is_union then
-				unions.union_cnt = unions.union_cnt + 1
-				local union_idx = unions[unions.union_cnt] or 1
-				local u_fmt, u_tbl = unpack_union(v.body, unions, union_idx)
+				local u_fmt, u_tbl = unpack_union(v.body, unions)
 				fmt = fmt..u_fmt
 				u_tbl.name = v.name
 				table.insert(tbl, u_tbl)
@@ -468,18 +465,8 @@ local function layout(data, keys, unread)
 	for k, v in ipairs(keys) do
 		if type(v) == "string" then
 			tbl[v] = data[idx]
-			-- local t = {}
-			-- t[v] = data[idx]
-			-- table.insert(tbl, t)
 			idx = idx + 1
 		elseif v.array then
-			-- local t = {}
-			-- t[v.name] = {}
-			-- for i=1, v.array do
-			-- 	table.insert(t[v.name], data[idx])
-			-- 	idx = idx + 1
-			-- end
-			-- table.insert(tbl, t)
 			tbl[v.name] = {}
 			for i=1, v.array do
 				table.insert(tbl[v.name], data[idx])
@@ -488,10 +475,27 @@ local function layout(data, keys, unread)
 		else
 			local s_tbl, s_idx = layout(data, v, idx)
 			tbl[v.name] = s_tbl
-			-- local t = {}
-			-- t[v.name] = s_tbl
-			-- table.insert(tbl, t)
+			idx = s_idx
+		end
+	end
+	return tbl, idx
+end
 
+local function unwind(data, keys, unread)
+	local tbl = {}
+	local idx = unread or 1
+	for k, v in ipairs(keys) do
+		if type(v) == "string" then
+			tbl[v] = idx
+			idx = idx + 1
+		elseif v.array then
+			tbl[v.name] = idx
+			idx = idx + v.array
+		else
+			local s_tbl, s_idx = unwind(data, v, idx)
+			for m, n in pairs(s_tbl) do
+				tbl[v.name.."."..m] = n
+			end
 			idx = s_idx
 		end
 	end
@@ -501,11 +505,35 @@ end
 function inst.unpack(structs, struct_name, bin, unions)
 	local scheme = structs[struct_name]
 
-	local fmt, tbl = unpack_scheme(scheme, unions)
-	local data = table.pack(string.unpack("!="..fmt, bin))
-	data[#data] = nil
-	-- print(fmt, table.concat(data, ";"))
-	return layout(data, tbl)
+	local fmt, keys = unpack_scheme(scheme, unions)
+	fmt = "!="..fmt
+	local list = table.pack(string.unpack(fmt, bin))
+	list[#list] = nil
+	local unwind_keys = unwind(list, keys)
+
+	local mt = {
+		get=function(key, idx)
+			local id = rawget(unwind_keys, key)
+			id = id + (idx or 1) - 1
+
+			return list[id]
+		end,
+		set=function(key, val, idx)
+			local id = rawget(unwind_keys, key)
+			id = id + (idx or 1) -1
+			list[id] = val
+		end,
+		pack=function()
+			return string.pack(fmt, table.unpack(list))
+		end,
+		dump=function()
+			local tbl = layout(list, keys)
+			return tbl
+		end
+	}
+	mt.__index = mt
+
+	return setmetatable({}, mt)
 end
 
 function inst.pack(structs, struct_name, tbl)

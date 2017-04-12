@@ -1085,5 +1085,56 @@
                              "is_union": true,
                                  "name": "l",
                                  "type": "anony"
+                         }, {
+                                 "body": [ {
+                                                 "body": [ {
+                                                              "fmt": "b",
+                                                             "name": "a",
+                                                             "type": "char"
+                                                         }, {
+                                                                 "body": [ {
+                                                                                    "fmt": "L",
+                                                                             "is_pointer": true,
+                                                                                   "name": "b",
+                                                                                   "type": "void"
+                                                                         }, {
+                                                                              "fmt": "b",
+                                                                             "name": "c",
+                                                                             "type": "char"
+                                                                         } ],
+                                                             "is_union": true,
+                                                                 "name": "d",
+                                                                 "type": "anony"
+                                                         } ],
+                                             "is_union": true,
+                                                 "name": "e",
+                                                 "type": "anony"
+                                         }, {
+                                              "fmt": "i",
+                                             "name": "f",
+                                             "type": "int"
+                                         } ],
+                             "is_union": true,
+                                 "name": "m",
+                                 "type": "anony"
+                         }, {
+                                 "body": [ {
+                                              "fmt": "b",
+                                             "name": "a",
+                                             "type": "char"
+                                         }, {
+                                             "array": 2,
+                                               "fmt": "b",
+                                              "name": "b",
+                                              "type": "char"
+                                         } ],
+                             "is_union": true,
+                                 "name": "n",
+                                 "type": "anony"
+                         }, {
+                                    "fmt": "L",
+                             "is_pointer": true,
+                                   "name": "o",
+                                   "type": "void"
                          } ]
 }

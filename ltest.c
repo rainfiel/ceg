@@ -374,6 +374,24 @@ struct union_align {
 			char e;
 		} f;
 	} l;
+
+	union {
+		union {
+			char a;
+			union {
+				void *b;
+				char c;
+			} d;
+		} e;
+		int f;
+	} m;
+
+	union {
+		char a;
+		char b[2];
+	} n;
+
+	void *o;
 };
 
 static int 
@@ -395,6 +413,12 @@ lunion_align(lua_State *L) {
 
 	n.l.f.d = 8;
 	n.l.f.e = '!';
+
+	n.m.e.d.b = 9;
+
+	n.n.a = '!';
+
+	n.o = 10;
 
 	lua_pushlstring(L, (char*)&n, sz);
 	return 1;
