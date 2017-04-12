@@ -715,7 +715,7 @@ struct_or_union_specifier = V"struct_or_union" * (SS * V"identifier")^-1 * SS * 
 struct_or_union_definition = V"struct_or_union" * (SS * V"identifier")^-1 * SS * V"{" 
 									* SS * V"struct_declaration_list" * SS * V"}"
 
-start_anony_struct_or_union = V"struct_or_union" * SS * V"{"
+start_anony_struct_or_union = V"struct_or_union" * SS * (V"identifier" * SS)^-1 * V"{"
 anony_struct_or_union = V"start_anony_struct_or_union"
 									* SS * V"struct_declaration_list" * SS * V"}" * SS * V"identifier" * SS * V";"
 

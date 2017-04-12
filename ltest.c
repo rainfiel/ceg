@@ -347,7 +347,7 @@ struct sprite {
 struct union_align {
 	// int size;
 	char head;
-	union {
+	union inner {
 		void *a;
 		char b;
 	} c;
@@ -426,7 +426,7 @@ lunion_align(lua_State *L) {
 
 struct struct_align
 {
-	struct {
+	struct inner2 {
 		void* a;
 		char b;
 	} c;
