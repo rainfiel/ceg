@@ -137,7 +137,7 @@ local function struct_declarations(code, structs)
 			is_pointer = nil
 			if string.sub(v, 1, 1) == "*" then
 				is_pointer = true
-				name = name:match("[* ]*([%a%d_]+)")
+				name = string.gsub(name, "[ ]*[*][ ]*", "")
 			end
 			local a, array = name:match("([%a%d_]+)[ ]*[[][ ]*(%d+)[ ]*[]]")
 			if a and array then

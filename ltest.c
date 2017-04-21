@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+int luaopen_ltest(lua_State *L);
 
 typedef signed char        int8_t;
 typedef short              int16_t;
@@ -362,6 +363,7 @@ struct union_align {
 	union {
 		int i[3];
 		long j;
+		int* k[1];
 	} k;
 
 	union {
@@ -401,8 +403,8 @@ lunion_align(lua_State *L) {
 	memset(&n, 0, sz);
 
 	n.head = '!';
-	n.c.a = 2;
-	n.d = 3;
+	n.c.a = (void*)2;
+	n.d = (void*)3;
 
 	n.g.e = '!';
 	n.h = 4;
@@ -411,14 +413,14 @@ lunion_align(lua_State *L) {
 	n.k.i[1] = 6;
 	n.k.i[2] = 7;
 
-	n.l.f.d = 8;
+	n.l.f.d = (void*)8;
 	n.l.f.e = '!';
 
-	n.m.e.d.b = 9;
+	n.m.e.d.b = (void*)9;
 
 	n.n.a = '!';
 
-	n.o = 10;
+	n.o = (void*)10;
 
 	lua_pushlstring(L, (char*)&n, sz);
 	return 1;

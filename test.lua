@@ -82,6 +82,8 @@ local function test()
     -- print(print_tbl(union))
 
     union.set("k.i", 4, 2)
+    bin = union.pack()
+    union = struct.unpack(scheme, "union_align", bin, {[4] = 2, [7] = 2})
 
     rlt = {d=3,c={a=2}
     ,l={f={d=8,e=33}
@@ -116,16 +118,5 @@ local function test()
 
     print("test succeed")
 end
-
--- local code = [[
--- struct a {
---     struct inner {
---         int b;
---     } c;
--- };
--- ]]
-
--- local scheme = struct.parse(code)
--- print(print_tbl(scheme))
 
 test()
