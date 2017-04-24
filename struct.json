@@ -78,7 +78,7 @@
                              "type": "int"
                          }, {
                              "array": 1,
-                              "body": [ {
+                              "body": [ [ {
                                            "fmt": "I",
                                           "name": "name",
                                           "type": "offset_t"
@@ -86,7 +86,7 @@
                                            "fmt": "i",
                                           "name": "id",
                                           "type": "int"
-                                      } ],
+                                      } ] ],
                                "fmt": "Ii",
                               "name": "component",
                               "type": "pack_component"
@@ -191,7 +191,7 @@
                              "type": "int"
                          }, {
                              "array": 1,
-                              "body": [ {
+                              "body": [ [ {
                                            "fmt": "i",
                                           "name": "texid",
                                           "type": "int"
@@ -205,7 +205,7 @@
                                             "fmt": "i",
                                            "name": "screen_coord",
                                            "type": "int32_t"
-                                      } ],
+                                      } ] ],
                                "fmt": "iHi",
                               "name": "rect",
                               "type": "pack_quad"
@@ -233,7 +233,7 @@
                              "type": "int"
                          }, {
                              "array": 1,
-                              "body": [ {
+                              "body": [ [ {
                                            "fmt": "I",
                                           "name": "texture_coord",
                                           "type": "offset_t"
@@ -249,7 +249,7 @@
                                            "fmt": "i",
                                           "name": "n",
                                           "type": "int"
-                                      } ],
+                                      } ] ],
                                "fmt": "IIii",
                               "name": "poly",
                               "type": "pack_poly_data"

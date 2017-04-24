@@ -151,8 +151,17 @@ local function struct_declarations(code, structs)
 
 			local struct_name = last_type:match("[struct] ([%a%d_]+)")
 			if not is_pointer and struct_name then
-				data.body = assert(structs[struct_name], struct_name)
+				local body = assert(structs[struct_name], struct_name)
 				data.type = struct_name
+
+				if array then
+					data.body = {}
+					for k=1, array do
+						table.insert(data.body, body)
+					end
+				else
+					data.body = body
+				end
 			end
 
 			data.fmt = declarator_fmt(data)
@@ -197,7 +206,14 @@ local function struct_pack(struct)
 		elseif v.is_pointer then
 			t = "i"
 		elseif v.body then
-			t = struct_pack(v.body)
+			if v.array then
+				t = ""
+				for m, n in ipairs(v.body) do
+					t = t..struct_pack(n)
+				end
+			else
+				t = struct_pack(v.body)
+			end
 		else
 			t = type_to_fmt(v.type)
 		end
@@ -436,7 +452,7 @@ local function unpack_scheme(scheme, unions)
 				table.insert(tbl, s_tbl)
 			end
 		else
-			if v.array and v.array > 1 then
+			if v.array then
 				fmt = fmt .. string.rep(v.fmt, v.array)
 				table.insert(tbl, {name=v.name, array=v.array})
 			else
