@@ -462,24 +462,6 @@ local function unwind(keys, unread)
 	return tbl, idx
 end
 
-local function print_tbl(tbl, ref)
-	ref = ref or {}
-	local dbg = {}
-	for k, v in pairs(tbl) do
-		if type(v) == "table" then
-			if ref[v] then
-				table.insert(dbg, tostring(k).."=".."ref_"..tostring(v))
-			else
-				ref[v] = true
-				table.insert(dbg, tostring(k).."="..print_tbl(v, ref).."\n")
-			end
-		else
-			table.insert(dbg, tostring(k).."="..tostring(v))
-		end
-	end
-	return "{"..table.concat(dbg, ",").."}"
-end
-
 function inst.unpack(structs, struct_name, bin, unions)
 	local scheme = structs[struct_name]
 
