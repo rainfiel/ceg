@@ -81,7 +81,7 @@ local function test()
     local union = struct.unpack(scheme, "union_align", bin, {[4] = 2, [7] = 2})
     -- print(print_tbl(union))
 
-    union.set("k.i", 4, 2)
+    union.set("k.i.2", 4)
     bin = union.pack()
     union = struct.unpack(scheme, "union_align", bin, {[4] = 2, [7] = 2})
 
@@ -115,8 +115,27 @@ local function test()
     }
 
     assert(table_equals(sa.dump(), rlt), "struct_align failed")
+    ----------------------------------------------------------------------------------------------
+
+    bin = ltest.test_array()
+    local ta = struct.unpack(scheme, "test_array", bin)
+    -- print(print_tbl(ta.dump()))
+
+    ta.set("a.2.data", 300)
+
+    bin = ta.pack()
+    ta = struct.unpack(scheme, "test_array", bin)
+
+    rlt = { b={3,6}
+            ,a={{data=100,id=1}
+            ,{data=--[[200]]300,id=1024}
+            }
+            ,cnt=2}
+    assert(table_equals(ta.dump(), rlt), "test_array failed")
 
     print("test succeed")
+
+
 end
 
 test()

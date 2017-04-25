@@ -525,6 +525,37 @@ lparticle_config(lua_State *L) {
 	return 1;
 }
 
+struct _array {
+	int id;
+	void* data;
+};
+
+struct test_array {
+	struct _array a[2];
+	int cnt;
+	short b[2];
+};
+
+static int
+ltest_array(lua_State *L) {
+	size_t sz = sizeof(struct test_array);
+	struct test_array ta;
+	memset(&ta, 0, sz);
+
+	ta.cnt = 2;
+	ta.a[0].id=1;
+	ta.a[0].data = (void*)100;
+
+	ta.a[1].id=1024;
+	ta.a[1].data = (void*)200;
+
+	ta.b[0] = 3;
+	ta.b[1] = 6;
+
+	lua_pushlstring(L, (char*)&ta, sz);
+	return 1;
+}
+
 
 int
 luaopen_ltest(lua_State *L) {
@@ -534,6 +565,7 @@ luaopen_ltest(lua_State *L) {
 		{ "particle_config", lparticle_config },
 		{ "union_align", lunion_align },
 		{ "struct_align", lstruct_align },
+		{ "test_array", ltest_array },
 		{ NULL, NULL },
 	};
 	luaL_newlib(L,l);

@@ -151,17 +151,8 @@ local function struct_declarations(code, structs)
 
 			local struct_name = last_type:match("[struct] ([%a%d_]+)")
 			if not is_pointer and struct_name then
-				local body = assert(structs[struct_name], struct_name)
+				data.body = assert(structs[struct_name], struct_name)
 				data.type = struct_name
-
-				if array then
-					data.body = {}
-					for k=1, array do
-						table.insert(data.body, body)
-					end
-				else
-					data.body = body
-				end
 			end
 
 			data.fmt = declarator_fmt(data)
@@ -204,16 +195,9 @@ local function struct_pack(struct)
 				t = struct_pack(v.body)
 			end
 		elseif v.is_pointer then
-			t = "i"
+			t = inst.pointer_fmt
 		elseif v.body then
-			if v.array then
-				t = ""
-				for m, n in ipairs(v.body) do
-					t = t..struct_pack(n)
-				end
-			else
-				t = struct_pack(v.body)
-			end
+			t = struct_pack(v.body)
 		else
 			t = type_to_fmt(v.type)
 		end
@@ -259,7 +243,7 @@ local function struct_block(code)
 	local patt = ceg.scan(ceg.apply(rules, captures))
 	patt:match(code)
 
-	-- structs.types = c99.typedefs
+	structs.types = c99.typedefs
 	return structs
 end
 
@@ -376,61 +360,6 @@ local function _layout(fmt, tbl, keys, bin)
 	return unread
 end
 
-local function unpack_schemex(scheme, bin)
-	local tbl = {}
-	local keys = {}
-	local align, align_size, tail_x = nil
-	local fmt = ""
-
-	local layout = function()
-		if tail_x then
-			fmt = fmt .. "X" .. align
-		end
-		local data = string.unpack(fmt, bin)
-		local unraed = data[#data]
-		data[#data] = nil
-		for i, j in ipairs(data) do
-			tbl[keys[i]] = j
-		end
-
-		align, align_size, tail_x=nil
-		keys = {}
-		fmt = ""
-	end
-
-	for k, v in ipairs(scheme) do
-		if v.body	 then
-			-- unpack
-			if fmt ~= "" then
-				layout()
-			end
-
-			if v.is_union then
-			else
-			end
-		else
-			local sz = string.packsize(v.fmt)
-			if not align_size or sz > align_size then
-				align_size = sz
-				align = v.fmt
-			else
-				tail_x = true
-			end
-			if v.array then
-				fmt = fmt .. string.rep(v.fmt, v.array)
-			else
-				fmt = fmt .. v.fmt
-			end
-			table.insert(keys, v.name)
-		end
-	end
-
-	if fmt ~= "" then
-		layout()
-	end
-	return tbl
-end
-
 local function unpack_scheme(scheme, unions)
 	local tbl = {}
 	local fmt = ""
@@ -440,17 +369,16 @@ local function unpack_scheme(scheme, unions)
 	local align, align_size = nil
 	for k, v in ipairs(scheme) do
 		if v.body then
+			local _fmt, _tbl
 			if v.is_union then
-				local u_fmt, u_tbl = unpack_union(v.body, unions)
-				fmt = fmt..u_fmt
-				u_tbl.name = v.name
-				table.insert(tbl, u_tbl)
+				_fmt, _tbl = unpack_union(v.body, unions)
 			else
-				local s_fmt, s_tbl = unpack_scheme(v.body, unions)
-				fmt = fmt..s_fmt
-				s_tbl.name = v.name
-				table.insert(tbl, s_tbl)
+				_fmt, _tbl = unpack_scheme(v.body, unions)
 			end
+			fmt = fmt..string.rep(_fmt, v.array or 1)
+			_tbl.name = v.name
+			_tbl.array = v.array
+			table.insert(tbl, _tbl)
 		else
 			if v.array then
 				fmt = fmt .. string.rep(v.fmt, v.array)
@@ -485,8 +413,14 @@ local function layout(data, keys, unread)
 		elseif v.array then
 			tbl[v.name] = {}
 			for i=1, v.array do
-				table.insert(tbl[v.name], data[idx])
-				idx = idx + 1
+				if #v > 0 then
+					local s_tbl, s_idx = layout(data, v, idx)
+					table.insert(tbl[v.name], s_tbl)
+					idx = s_idx
+				else
+					table.insert(tbl[v.name], data[idx])
+					idx = idx + 1
+				end
 			end
 		else
 			local s_tbl, s_idx = layout(data, v, idx)
@@ -497,7 +431,7 @@ local function layout(data, keys, unread)
 	return tbl, idx
 end
 
-local function unwind(data, keys, unread)
+local function unwind(keys, unread)
 	local tbl = {}
 	local idx = unread or 1
 	for k, v in ipairs(keys) do
@@ -505,10 +439,20 @@ local function unwind(data, keys, unread)
 			tbl[v] = idx
 			idx = idx + 1
 		elseif v.array then
-			tbl[v.name] = idx
-			idx = idx + v.array
+			for i=1, v.array do
+				if #v > 0 then
+					local s_tbl, s_idx = unwind(v, idx)
+					for m, n in pairs(s_tbl) do
+						tbl[v.name.."."..i.."."..m] = n
+					end
+					idx = s_idx
+				else
+					tbl[v.name.."."..i] = idx
+					idx = idx + 1
+				end
+			end
 		else
-			local s_tbl, s_idx = unwind(data, v, idx)
+			local s_tbl, s_idx = unwind(v, idx)
 			for m, n in pairs(s_tbl) do
 				tbl[v.name.."."..m] = n
 			end
@@ -518,6 +462,24 @@ local function unwind(data, keys, unread)
 	return tbl, idx
 end
 
+local function print_tbl(tbl, ref)
+	ref = ref or {}
+	local dbg = {}
+	for k, v in pairs(tbl) do
+		if type(v) == "table" then
+			if ref[v] then
+				table.insert(dbg, tostring(k).."=".."ref_"..tostring(v))
+			else
+				ref[v] = true
+				table.insert(dbg, tostring(k).."="..print_tbl(v, ref).."\n")
+			end
+		else
+			table.insert(dbg, tostring(k).."="..tostring(v))
+		end
+	end
+	return "{"..table.concat(dbg, ",").."}"
+end
+
 function inst.unpack(structs, struct_name, bin, unions)
 	local scheme = structs[struct_name]
 
@@ -525,18 +487,15 @@ function inst.unpack(structs, struct_name, bin, unions)
 	fmt = "!="..fmt
 	local list = table.pack(string.unpack(fmt, bin))
 	list[#list] = nil
-	local unwind_keys = unwind(list, keys)
+	local unwind_keys = unwind(keys)
 
 	local mt = {
-		get=function(key, idx)
+		get=function(key)
 			local id = rawget(unwind_keys, key)
-			id = id + (idx or 1) - 1
-
 			return list[id]
 		end,
-		set=function(key, val, idx)
+		set=function(key, val)
 			local id = rawget(unwind_keys, key)
-			id = id + (idx or 1) -1
 			list[id] = val
 		end,
 		pack=function()
